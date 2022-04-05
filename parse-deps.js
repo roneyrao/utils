@@ -23,7 +23,6 @@ dependencyTree({
   }
 })
 
-const List3rd = new Set()
 function parsePath(p) {
   let is3rd = p.indexOf('node_modules') !== -1
   if (!is3rd) {
@@ -39,7 +38,6 @@ function parsePath(p) {
     if (m) {
       prefix = m[1]
       p = m[2]
-      List3rd.add(p)
     } else {
       throw new Error('failed to parse package name for: ', p);
     }
@@ -67,7 +65,10 @@ function parseMap(obj) {
   })
 
   const result = {}
-  Object.keys(o3rd).forEach(k => {
+  const keys3rd = Object.keys(o3rd).sort()
+  console.log('3rd:', keys3rd)
+
+  keys3rd.forEach(k => {
     result[k] = o3rd[k]
   })
   Object.keys(oLocal).forEach(k => {
@@ -89,14 +90,13 @@ function parseList(list) {
       oLocal.push(name)
     }
   })
+
   return o3rd.concat(oLocal)
 }
 
 const result = parseMap(visited)
 
-const ls = Array.from(List3rd).sort()
-console.log(ls)
-
 const fs = require('fs')
-fs.writeFileSync('deps.json', JSON.stringify(result, null, 2), 'utf8')
-console.log('Full deps written to deps.json')
+const fileName = `deps-${path.basename(entry)}.json`
+fs.writeFileSync(fileName, JSON.stringify(result, null, 2), 'utf8')
+console.log(`Full deps written to ${fileName}`)
