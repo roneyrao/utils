@@ -12,7 +12,11 @@ if (!listFile || !root) {
 }
 
 
-const REG = /^import (?:.* from )?(['"])([^.'"][^'"]+)\1;?$/
+const REG_LEADING = /^import (\S+, +)?\{[^}]*$/
+const REG_ENDING = /^[^}]*\} +from +[^}]+$/
+const REG_SINGLE = /^import (?:.* from )?(['"])([^.'"][^'"]+)\1;?$/
+//TODO
+//require()
 let Resolve
 const Process = new Promise((res, rej) => {
   Resolve = res;
@@ -38,30 +42,42 @@ async function processLineByLine(inputfile, handler, cb) {
 
 
 async function parseImports(filepath, set) {
-  let stopped = false
+  let leading
+
+  function matchLine(line) {
+    const m = line.match(REG_SINGLE)
+    if (m) {
+      let dep = m[2]
+      const ix = dep.indexOf('/')
+      if (ix > -1) {
+        if (dep[0] === '@') {
+          const ix2 = dep.indexOf('/', ix + 1)
+          dep = dep.substring(0, ix2 === -1 ? undefined : ix2)
+        } else {
+          dep = dep.substr(0, ix)
+        }
+      }
+      set.add(dep)
+    }
+  }
 
   function lineHandler(line, rl) {
-    if (stopped) return
-
     line = line.trim()
 
     if (!line) return
 
     if (line.startsWith('import')) {
-      const m = line.match(REG)
-      if (m) {
-        let dep = m[2]
-        const ix = dep.indexOf('/')
-        if (ix > -1) {
-          if (dep[0] === '@') {
-            const ix2 = dep.indexOf('/', ix + 1)
-            dep = dep.substring(0, ix2 === -1 ? undefined : ix2)
-          } else {
-            dep = dep.substr(0, ix)
-          }
-        }
-        set.add(dep)
+      if (REG_LEADING.test(line)) {
+        leading = line
+      } else {
+        matchLine(line)
       }
+    } else if (leading) {
+      leading += line
+      if (REG_ENDING.test(line)) {
+        matchLine(leading)
+        leading = null
+      }   
     } else if (!line.startsWith('//') && !line.startsWith('/*')) {
       rl.close()
       rl.removeAllListeners()
@@ -69,6 +85,10 @@ async function parseImports(filepath, set) {
   }
 
   function onDone() {
+    if (leading) {
+      console.error('Failed to parse', filepath)
+    }
+
     total -= 1
     if (!total) Resolve()
   }
@@ -93,15 +113,18 @@ async function parseFileList() {
   const str = JSON.stringify(Array.from(set), null, 2)
   console.log(str);
   fs.writeFileSync('deps.json', str, 'utf8')
+  console.log('written in deps.json')
 }
 
-function mapPackageJSON() {
+function mapPackageJson() {
+  const rs = {}
   const list = require('./deps.json')
   const { dependencies, devDependencies } = require('../../ws/web-app-bk/package.json');
   [[dependencies, 'dependencies'], [devDependencies, 'devDependencies']].forEach(([deps, name]) => {
     console.log(name)
-    const inside = {}
-    const out = {}
+    rs[name] = {}
+    const inside = rs[name]['inside'] = {}
+    const out = rs[name]['outside'] = {}
     Object.entries(deps).forEach(([k, v]) => {
       const ix = list.indexOf(k)
       if (ix > -1) {
@@ -114,8 +137,12 @@ function mapPackageJSON() {
     console.log('inside:', inside)
     console.log('out:', out)
   })
+  rs.left = list
   console.log('left', list)
+  const str = JSON.stringify(rs, null, 2)
+  fs.writeFileSync('maps.json', str, 'utf8')
+  console.log('written in maps.json')
 }
 
 // parseFileList()
-mapPackageJSON()
+mapPackageJson()
