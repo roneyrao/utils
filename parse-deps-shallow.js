@@ -11,13 +11,12 @@ if (!listFile || !root) {
   process.exit()
 }
 
- /* * adfaf/ */
 const REG_LEADING_IMPORT = /^import (\S+, +)?\{[^}]*$/
 const REG_ENDING_IMPORT = /^[^}]*\} +from +[^}]+$/
 const REG_LEADING_COMMENT = /^\s*\/\*.*$/
 const REG_ENDING_COMMENT = /^.*\*\/\s*$/
 const REG_IMPORT = /^import (?:.* from )?(['"])([^'"]+)\1;?\s*$/
-const REG_REQUIRE = /^.*(?:=\s*)?require\((['"])([^'"]+)\1\);?\s*$/
+const REG_REQUIRE = /^.*(?:=\s*)?require\((['"])([^'"]+)\1\).*;?\s*$/
 const REG_COMMENT = /^\s*(\/\/.*)|(\/\*.*\*\/)\s*$/
 
 let Resolve
@@ -111,6 +110,7 @@ async function parseImports(filepath, set) {
  * parse 3rd deps from files
  * whose relative path in the first argument
  * the second is their folder path
+ * TODO: import/require after other types of codes are ignored
  */
 async function parseFileList() {
   const set = new Set()
