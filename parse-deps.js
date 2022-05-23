@@ -75,7 +75,7 @@ function parseMap(obj) {
     result[k] = oLocal[k]
   })
 
-  return result
+  return [result, keys3rd]
 }
 
 function parseList(list) {
@@ -94,9 +94,14 @@ function parseList(list) {
   return o3rd.concat(oLocal)
 }
 
-const result = parseMap(visited)
+const [map, keys3rd] = parseMap(visited)
 
 const fs = require('fs')
-const fileName = `deps-${path.basename(entry)}.json`
-fs.writeFileSync(fileName, JSON.stringify(result, null, 2), 'utf8')
-console.log(`Full deps written to ${fileName}`)
+
+let fileName = `deps-3rd-${path.basename(entry)}.json`
+fs.writeFileSync(fileName, JSON.stringify(keys3rd, null, 2), 'utf8')
+console.log(`3rd deps list written to ${fileName}`)
+
+fileName = `deps-map-${path.basename(entry)}.json`
+fs.writeFileSync(fileName, JSON.stringify(map, null, 2), 'utf8')
+console.log(`Full deps map written to ${fileName}`)

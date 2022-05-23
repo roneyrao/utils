@@ -7,16 +7,19 @@ const { createInterface } = require('readline');
 const listFile = process.argv[2]
 let root = process.argv[3]
 if (!listFile || !root) {
-  console.log('cli list_file_path root_folder_path')
+  console.log('cli list_relative_file_path root_folder_path')
   process.exit()
 }
 
+ /* * adfaf/ */
+const REG_LEADING_IMPORT = /^import (\S+, +)?\{[^}]*$/
+const REG_ENDING_IMPORT = /^[^}]*\} +from +[^}]+$/
+const REG_LEADING_COMMENT = /^\s*\/\*.*$/
+const REG_ENDING_COMMENT = /^.*\*\/\s*$/
+const REG_IMPORT = /^import (?:.* from )?(['"])([^'"]+)\1;?\s*$/
+const REG_REQUIRE = /^.*(?:=\s*)?require\((['"])([^'"]+)\1\);?\s*$/
+const REG_COMMENT = /^\s*(\/\/.*)|(\/\*.*\*\/)\s*$/
 
-const REG_LEADING = /^import (\S+, +)?\{[^}]*$/
-const REG_ENDING = /^[^}]*\} +from +[^}]+$/
-const REG_SINGLE = /^import (?:.* from )?(['"])([^.'"][^'"]+)\1;?$/
-//TODO
-//require()
 let Resolve
 const Process = new Promise((res, rej) => {
   Resolve = res;
@@ -42,23 +45,26 @@ async function processLineByLine(inputfile, handler, cb) {
 
 
 async function parseImports(filepath, set) {
-  let leading
+  let multiline, multicomment
 
   function matchLine(line) {
-    const m = line.match(REG_SINGLE)
+    const m = line.match(REG_IMPORT) || line.match(REG_REQUIRE)
     if (m) {
       let dep = m[2]
-      const ix = dep.indexOf('/')
-      if (ix > -1) {
-        if (dep[0] === '@') {
-          const ix2 = dep.indexOf('/', ix + 1)
-          dep = dep.substring(0, ix2 === -1 ? undefined : ix2)
-        } else {
-          dep = dep.substr(0, ix)
+      if (!dep.startsWith('.')) { // skip local deps
+        const ix = dep.indexOf('/')
+        if (ix > -1) {
+          if (dep[0] === '@') {
+            const ix2 = dep.indexOf('/', ix + 1)
+            dep = dep.substring(0, ix2 === -1 ? undefined : ix2)
+          } else {
+            dep = dep.substr(0, ix)
+          }
         }
+        set.add(dep)
       }
-      set.add(dep)
     }
+    return m
   }
 
   function lineHandler(line, rl) {
@@ -66,26 +72,31 @@ async function parseImports(filepath, set) {
 
     if (!line) return
 
-    if (line.startsWith('import')) {
-      if (REG_LEADING.test(line)) {
-        leading = line
-      } else {
-        matchLine(line)
-      }
-    } else if (leading) {
-      leading += line
-      if (REG_ENDING.test(line)) {
-        matchLine(leading)
-        leading = null
+    if (multiline) {
+      multiline += line
+      if (REG_ENDING_IMPORT.test(line)) {
+        matchLine(multiline)
+        multiline = null
       }   
-    } else if (!line.startsWith('//') && !line.startsWith('/*')) {
-      rl.close()
-      rl.removeAllListeners()
+    } else if (multicomment) {
+      if (REG_ENDING_COMMENT.test(line)) {
+        multicomment = false
+      }   
+    } else if (!matchLine(line) && !REG_COMMENT.test(line)) {
+      if (REG_LEADING_IMPORT.test(line)) {
+        multiline = line
+      } else if (REG_LEADING_COMMENT.test(line)) {
+        multicomment = true
+      } else {
+        console.log('last line', line)
+        rl.close()
+        rl.removeAllListeners()
+      }
     }
   }
 
   function onDone() {
-    if (leading) {
+    if (multiline || multicomment) {
       console.error('Failed to parse', filepath)
     }
 
@@ -96,6 +107,11 @@ async function parseImports(filepath, set) {
   await processLineByLine(filepath, lineHandler, onDone)
 }
 
+/*
+ * parse 3rd deps from files
+ * whose relative path in the first argument
+ * the second is their folder path
+ */
 async function parseFileList() {
   const set = new Set()
 
@@ -116,6 +132,10 @@ async function parseFileList() {
   console.log('written in deps.json')
 }
 
+/*
+ * mapping out the parsed 3rd deps
+ * in dependencies/devDependencies
+ */
 function mapPackageJson() {
   const rs = {}
   const list = require('./deps.json')
@@ -144,5 +164,5 @@ function mapPackageJson() {
   console.log('written in maps.json')
 }
 
-// parseFileList()
-mapPackageJson()
+parseFileList()
+// mapPackageJson()
