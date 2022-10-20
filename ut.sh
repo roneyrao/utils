@@ -26,54 +26,80 @@ fi
 # }' > last_ut.log
 
 # non-snapshots
+SPEC='\n==SPECS=='
+SNAP='\n==SNAPSHOTS=='
+FINAL="
+h
+s/^([^\n]+)(.+)($SPEC).+$/\2/
+s/\n/ /g
+s/.+/npm test -- -u &/
+x
+s/^([[:digit:]]+),([[:digit:]]+),([[:digit:]]+),([[:digit:]]+)\n(.+)($SPEC)(.+)($SNAP)(.*)$/\
+======= Failed Non-Snapshot Specs =======\n\
+\9\n\n\
+======= Failed Snapshots count [\2], files [\4] =======\n\
+Files only contain snapshots:\n\
+npm test -- -u \7\n\
+\n\
+======= Failed Non-Snapshot Specs count [\1], files [\3] =======\n\
+\5\n/
+G
+p
+"
+
 sed -E -n \
-  -e '1{x;s/^/0/;x}' \
-  -e '{
-    /\bFAIL\b/{
+  -e "1{x;s/^/0,0,0,0$SPEC$SNAP/;x}" \
+  -e "{
+    /\bFAIL /{
       :read
       N
       /\n[[:space:]]{2}●/{ # spec header
-        s/^\n+//
-        H; s/.+// # save and clear
+        s/^\n+//;H; s/.+// # save and clear
         x
-        s/([[:digit:]]+)(.*)/echo "$((\1+1))\2"/e # increase count 
+        s/^([[:digit:]]+)(.+)/echo \"\$((\1+1))\2\"/e # increase count 
         x
         b read
       }
-      /\n.+\bFAIL\b/{ # another FAIL found, save previous and clear
+      /\nFAIL /{ # another FAIL found, save previous and clear
         s/^\n+//
-        H
+        x
+        /^(([[:digit:]]+,){3})([[:digit:]]+)(.+)($SNAP)(.*\n)(FAIL )([^(\n]+)( \([^\n]+\))?$/{
+          s//echo \"\1\$((\3+1))\4 \8\5\6\7\8\9\"/e;
+          b push_fail
+        }
+        s/^(([[:digit:]]+,){2})([[:digit:]]+)(.+)($SPEC.*)(\nFAIL )([^(\n]+)( \([^\n]+\))?(\n.+$)/echo \"\1\$((\3+1))\4\n\7\5\6\7\8\9\"/e;
+        :push_fail
+        G
+        x
         s/.+//
         b read
       }
       /\nPost job cleanup/{ # output and quit when end
         s/^\n+//
-        H
         x
-        s/([[:digit:]]+)\n(.*)/\2\n======= Failed spec count: \1 =======/p
+        /^(([[:digit:]]+,){3})([[:digit:]]+)(.+)($SNAP)(.*\n)(FAIL )([^(\n]+)( \([^\n]+\))?$/{
+          s//echo \"\1\$((\3+1))\4 \8\5\6\7\8\9\"/e;
+          b push_quit
+        };
+        s/^(([[:digit:]]+,){2})([[:digit:]]+)(.+)($SPEC.*)(\nFAIL )([^(\n]+)( \([^\n]+\))?(\n.+$)/echo \"\1\$((\3+1))\4\n\7\5\6\7\8\9\"/e;
+        :push_quit
+        G
+        $FINAL
         q
       }
       /\n {6}at Object\.toMatchSnapshot.+/{
         s/.+// # clear snapshot spec
         x
-=;p
-        s/([[:digit:]]+)(.*)/echo "$((\1-1))\2"/e # decrease count
+        s/^([[:digit:]]+)(.+)/echo \"\$((\1-1))\2\"/e # decrease count
+        s/^([[:digit:]]+,)([[:digit:]]+)(.*)/echo \"\1\$((\2+1))\3\"/e # increase count
         s/(.+)\n.+$/\1/ # remove this header
         x
       }
       b read
     }
-  }' last_ut.log
+  }" last_ut.log
+  # }" last_ut.log  | tee >(
+  #   cmd=$(sed -n '/Files only contain snapshots:/{n;p}')
+  #   eval "$cmd&"
+  # )
 
-files=`sed -E -n '/\bFAIL\b/{s/^FAIL ([^()]+)( \(.+\))?$/\1/p}' last_ut.log`
-
-echo
-echo "======= Failed files count $(echo "$files" | wc -l) ======="
-echo "$files"
-echo
-echo npm test -- -u $files
-echo
-
-sed -E -n '/Test Suites: /{N;N;p}' last_ut.log
-
-#echo npm test -- -u $files
